@@ -2,80 +2,77 @@ package keystore
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"filippo.io/age"
 )
 
-const (
-	defaultKeyDir  = ".envault"
-	defaultKeyFile = "identity.age"
-)
-
-// KeyStore manages age identity keys on disk.
+// KeyStore manages the age identity (private key) for a project.
 type KeyStore struct {
-	KeyDir string
+	path string
 }
 
-// New returns a KeyStore rooted at the user's home directory.
-func New() (*KeyStore, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-	return &KeyStore{KeyDir: filepath.Join(home, defaultKeyDir)}, nil
+// New returns a KeyStore whose key file lives at path.
+func New(path string) *KeyStore {
+	return &KeyStore{path: path}
 }
 
-// KeyPath returns the full path to the identity file.
-func (ks *KeyStore) KeyPath() string {
-	return filepath.Join(ks.KeyDir, defaultKeyFile)
-}
-
-// Exists reports whether an identity file already exists.
-func (ks *KeyStore) Exists() bool {
-	_, err := os.Stat(ks.KeyPath())
+// Exists reports whether the key file is present on disk.
+func (k *KeyStore) Exists() bool {
+	_, err := os.Stat(k.path)
 	return err == nil
 }
 
-// Generate creates a new age X25519 identity and writes it to disk.
-// Returns an error if a key already exists.
-func (ks *KeyStore) Generate() (*age.X25519Identity, error) {
-	if ks.Exists() {
-		return nil, errors.New("identity already exists; use Load() or delete it first")
+// Generate creates a new age X25519 identity and writes it to the key file.
+// It returns an error if the file already exists.
+func (k *KeyStore) Generate() error {
+	if k.Exists() {
+		return fmt.Errorf("key already exists at %s", k.path)
 	}
-	if err := os.MkdirAll(ks.KeyDir, 0700); err != nil {
-		return nil, err
-	}
-	id, err := age.GenerateX25519Identity()
+	identity, err := age.GenerateX25519Identity()
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("generating identity: %w", err)
 	}
-	f, err := os.OpenFile(ks.KeyPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return nil, err
+	if err := os.MkdirAll(filepath.Dir(k.path), 0o700); err != nil {
+		return fmt.Errorf("creating key directory: %w", err)
 	}
-	defer f.Close()
-	_, err = f.WriteString(id.String() + "\n")
-	return id, err
+	data := identity.String() + "\n"
+	if err := os.WriteFile(k.path, []byte(data), 0o600); err != nil {
+		return fmt.Errorf("writing key file: %w", err)
+	}
+	return nil
 }
 
-// Load reads and parses the stored age identity.
-func (ks *KeyStore) Load() (*age.X25519Identity, error) {
-	data, err := os.ReadFile(ks.KeyPath())
+// Load reads the identity from the key file and returns it.
+func (k *KeyStore) Load() (*age.X25519Identity, error) {
+	data, err := os.ReadFile(k.path)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("key file not found at %s; run 'envault init'", k.path)
+		}
+		return nil, fmt.Errorf("reading key file: %w", err)
 	}
 	identities, err := age.ParseIdentities(strings.NewReader(string(data)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing identity: %w", err)
 	}
 	if len(identities) == 0 {
-		return nil, errors.New("no identities found in key file")
+		return nil, fmt.Errorf("no identities found in key file")
 	}
 	id, ok := identities[0].(*age.X25519Identity)
 	if !ok {
-		return nil, errors.New("unexpected identity type")
+		return nil, fmt.Errorf("unexpected identity type")
 	}
 	return id, nil
+}
+
+// Recipient loads the identity and returns the corresponding public recipient.
+func (k *KeyStore) Recipient() (*age.X25519Recipient, error) {
+	id, err := k.Load()
+	if err != nil {
+		return nil, err
+	}
+	return id.Recipient(), nil
 }
