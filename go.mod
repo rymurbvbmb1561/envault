@@ -1,5 +1,5 @@
-module github.com/yourorg/envault
+module github.com/user/envault
 
 go 1.22
 
-require filippo.io/age v1.2.0
+require filippo.io/age v1.1.1
