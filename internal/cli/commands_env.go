@@ -17,6 +17,16 @@ Examples:
   eval $(envault env AWS --export)
 `
 
+// formatEnvLine formats a single key-value pair as a shell-evaluable line.
+// If export is true, the line is prefixed with "export " so that the variable
+// is exported to child processes when the output is eval'd.
+func formatEnvLine(key, value string, export bool) string {
+	if export {
+		return "export " + key + "=" + value
+	}
+	return key + "=" + value
+}
+
 func init() {
 	registerUsage("env", envUsage)
 }
