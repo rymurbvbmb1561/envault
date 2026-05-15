@@ -9,4 +9,8 @@ package cli
 //   search <QUERY> [--values] - search keys (and optionally values) by substring
 //
 // They follow the same Runner-based pattern as other commands and require
-// the vault to be initialised and locked before use.
+// the vault to be initialised and unlocked before use.
+//
+// Note: neither command modifies vault state, so no write lock is acquired.
+// The clipboard contents written by `copy` are cleared after a configurable
+// timeout (default: 30 seconds) to reduce accidental secret exposure.
